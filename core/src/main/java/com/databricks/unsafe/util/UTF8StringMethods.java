@@ -6,9 +6,9 @@ import java.io.UnsupportedEncodingException;
  * A String encoded in UTF-8 as long representing the string's length, followed by a
  * contiguous region of bytes; see http://en.wikipedia.org/wiki/UTF-8 for details.
  */
-public final class UTF8String {
+public final class UTF8StringMethods {
 
-  private UTF8String() {
+  private UTF8StringMethods() {
     // Make the default constructor private, since this only holds static methods.
     // See UTF8StringPointer for a more object-oriented interface to UTF8String data.
   }

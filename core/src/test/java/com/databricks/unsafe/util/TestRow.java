@@ -32,7 +32,7 @@ public class TestRow {
     // Store this offset in the fixed-length section
     row.putLong(1, stringStartOffsetInWords);
     // Store the string in the variable-length section
-    UTF8String.createFromJavaString(
+    UTF8StringMethods.createFromJavaString(
       memory.getBaseObject(),
       memory.getBaseOffset() + stringStartOffsetInWords * WORD_SIZE,
       javaStr);

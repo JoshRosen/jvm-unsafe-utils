@@ -15,7 +15,7 @@ public class TestUTF8String {
     final int paddedSizeInWords = javaStrBytes.length / 8 + (javaStrBytes.length % 8 == 0 ? 0 : 1);
     final MemoryLocation memory = MemoryBlock.fromLongArray(new long[paddedSizeInWords]);
     final long bytesWritten =
-      UTF8String.createFromJavaString(memory.getBaseObject(), memory.getBaseOffset(), javaStr);
+      UTF8StringMethods.createFromJavaString(memory.getBaseObject(), memory.getBaseOffset(), javaStr);
     Assert.assertEquals(8 + javaStrBytes.length, bytesWritten);
     final UTF8StringPointer utf8String = new UTF8StringPointer();
     utf8String.setObjAndOffset(memory.getBaseObject(), memory.getBaseOffset());
