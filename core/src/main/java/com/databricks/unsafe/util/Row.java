@@ -72,15 +72,11 @@ public final class Row {
     return PlatformDependent.UNSAFE.getFloat(baseObject, baseOffset + bitSetWidth + index * WIDTH);
   }
 
-  void getString(int index, UTF8String string) {
+  void getString(int index, UTF8StringPointer string) {
     assertIndexIsValid(index);
     // This offset is in words and is measured relative to the start of the row
     final long stringDataOffset = getLong(index);
-    final long stringLengthInBytes = PlatformDependent.UNSAFE.getLong(
-        baseObject, baseOffset + stringDataOffset * WIDTH);
-    string.setBaseObjectAndOffset(
-      baseObject, baseOffset + stringDataOffset * WIDTH + WIDTH);
-    string.setLengthInBytes(stringLengthInBytes);
+    string.setObjAndOffset(baseObject, baseOffset + stringDataOffset * WIDTH);
   }
 
   // TODO: all of the other primitive types

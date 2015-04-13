@@ -1,46 +1,32 @@
 package com.databricks.unsafe.util;
 
-import com.databricks.unsafe.util.memory.MemoryLocation;
-
 import java.io.UnsupportedEncodingException;
 
 /**
- * A String encoded in UTF-8 as a contiguous region of bytes, which can be used for
- * comparison, search, see http://en.wikipedia.org/wiki/UTF-8 for details.
+ * A String encoded in UTF-8 as long representing the string's length, followed by a
+ * contiguous region of bytes; see http://en.wikipedia.org/wiki/UTF-8 for details.
  */
-public class UTF8String {
+public final class UTF8String {
 
-  private Object baseObject = null;
-  private long baseOffset = 0;
-
-  /** The length of this string, in bytes (NOT characters) */
-  private long lengthInBytes = 0;
-
-  UTF8String() {
-    // This constructor is intentionally left blank.
+  private UTF8String() {
+    // Make the default constructor private, since this only holds static methods.
+    // See UTF8StringPointer for a more object-oriented interface to UTF8String data.
   }
 
-  UTF8String(MemoryLocation memoryLocation, long lengthInBytes) {
-    this.setBaseObjectAndOffset(memoryLocation.getBaseObject(), memoryLocation.getBaseOffset());
-    this.setLengthInBytes(lengthInBytes);
+  /**
+   * Return the length of the string, in bytes (NOT characters), not including
+   * the space to store the length itself.
+   */
+  static long getLengthInBytes(Object baseObject, long baseOffset) {
+    return PlatformDependent.UNSAFE.getLong(baseObject, baseOffset);
   }
 
-  public void setBaseObjectAndOffset(Object baseObject, long baseOffset) {
-    this.baseObject = baseObject;
-    this.baseOffset = baseOffset;
-  }
-
-  public void setLengthInBytes(long newLengthInBytes) {
-    assert lengthInBytes >= 0 : "Size should be >= 0";
-    this.lengthInBytes = newLengthInBytes;
-  }
-
-  @Override
-  public String toString() {
+  public static String toJavaString(Object baseObject, long baseOffset) {
+    final long lengthInBytes = getLengthInBytes(baseObject, baseOffset);
     final byte[] bytes = new byte[(int) lengthInBytes];
     PlatformDependent.UNSAFE.copyMemory(
       baseObject,
-      baseOffset,
+      baseOffset + 8,  // skip over the length
       bytes,
       PlatformDependent.BYTE_ARRAY_OFFSET,
       lengthInBytes
@@ -52,6 +38,25 @@ public class UTF8String {
       PlatformDependent.throwException(e);
     }
     return str;
+  }
+
+  /**
+   * Write a Java string in UTF8String format to the specified memory location.
+   *
+   * @return the number of bytes written, including the space for tracking the string's length.
+   */
+  public static long createFromJavaString(Object baseObject, long baseOffset, String str) {
+    final byte[] strBytes = str.getBytes();
+    final long strLengthInBytes = strBytes.length;
+    PlatformDependent.UNSAFE.putLong(baseObject, baseOffset, strLengthInBytes);
+    PlatformDependent.copyMemory(
+      strBytes,
+      PlatformDependent.BYTE_ARRAY_OFFSET,
+      baseObject,
+      baseOffset + 8,
+      strLengthInBytes
+    );
+    return (8 + strLengthInBytes);
   }
 
 }
