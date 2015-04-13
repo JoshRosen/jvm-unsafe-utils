@@ -34,7 +34,7 @@ public class TestRow {
       memory.getBaseObject(),
       memory.getBaseOffset() + stringStartOffsetInWords * 8,
       (long) javaStrBytes.length);
-    // Store the string's bytes in the fixed-length section
+    // Store the string's bytes in the variable-length section
     PlatformDependent.copyMemory(
       javaStrBytes,
       PlatformDependent.BYTE_ARRAY_OFFSET,
