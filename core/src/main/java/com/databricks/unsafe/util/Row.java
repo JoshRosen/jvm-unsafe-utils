@@ -39,22 +39,17 @@ public final class Row {
 
   boolean isNullAt(int index) {
     assertIndexIsValid(index);
-    final long mask = 1L << (index & 0x3f);  // mod 64 and shift
-    return ((PlatformDependent.UNSAFE.getLong(baseObject, baseOffset + (index / 64)) & mask) != 0);
+    return BitSetMethods.isSet(baseObject, baseOffset, index);
   }
 
   void setNull(int index) {
     assertIndexIsValid(index);
-    final long mask = 1L << (index & 0x3f);  // mod 64 and shift
-    final long word = PlatformDependent.UNSAFE.getLong(baseObject, baseOffset + (index / 64));
-    PlatformDependent.UNSAFE.putLong(baseObject, baseOffset + (index / 64), word | mask);
+    BitSetMethods.set(baseObject, baseOffset, index);
   }
 
   void setNotNull(int index) {
     assertIndexIsValid(index);
-    final long mask = 1L << (index & 0x3f);  // mod 64 and shift
-    final long word = PlatformDependent.UNSAFE.getLong(baseObject, baseOffset + (index / 64));
-    PlatformDependent.UNSAFE.putLong(baseObject, baseOffset + (index / 64), word & ~mask);
+    BitSetMethods.unset(baseObject, baseOffset, index);
   }
 
   long getLong(int index) {

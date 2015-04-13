@@ -55,32 +55,27 @@ public final class BitSet {
    * Sets the bit at the specified index to {@code true}.
    */
   public void set(long index) {
-    assert index >= 0 : "index (" + index + ") should >= 0";
     assert index < numWords * 64 : "index (" + index + ") should < length (" + numWords * 64 + ")";
-    final long mask = 1L << (index & 0x3f);  // mod 64 and shift
-    final long wi = index >> 6;
-    words.set(wi, words.get(wi) | mask);  // div by 64 and mask
+    BitSetMethods.set(
+      words.memoryBlock().getBaseObject(), words.memoryBlock().getBaseOffset(), index);
   }
 
   /**
    * Sets the bit at the specified index to {@code false}.
    */
   public void unset(long index) {
-    assert index >= 0 : "index (" + index + ") should >= 0";
     assert index < numWords * 64 : "index (" + index + ") should < length (" + numWords * 64 + ")";
-    final long mask = 1L << (index & 0x3f);  // mod 64 and shift
-    final long wi = index >> 6;
-    words.set(wi, words.get(wi) & ~mask);  // div by 64 and mask
+    BitSetMethods.unset(
+      words.memoryBlock().getBaseObject(), words.memoryBlock().getBaseOffset(), index);
   }
 
   /**
    * Returns {@code true} if the bit is set at the specified index.
    */
   public boolean isSet(long index) {
-    assert index >= 0 : "index (" + index + ") should >= 0";
     assert index < numWords * 64 : "index (" + index + ") should < length (" + numWords * 64 + ")";
-    final long mask = 1L << (index & 0x3f);  // mod 64 and shift
-    return (words.get(index >> 6) & mask) != 0;  // div by 64 and mask
+    return BitSetMethods.isSet(
+      words.memoryBlock().getBaseObject(), words.memoryBlock().getBaseOffset(), index);
   }
 
   /**
