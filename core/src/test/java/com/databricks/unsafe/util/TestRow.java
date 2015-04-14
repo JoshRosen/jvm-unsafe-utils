@@ -41,5 +41,13 @@ public class TestRow {
     UTF8StringPointer stringFromRow = new UTF8StringPointer();
     row.getString(1, stringFromRow);
     Assert.assertEquals(javaStr, stringFromRow.toJavaString());
+
+    // Simple test of null tracking bitmaps
+    row.setNull(0);
+    assert(row.isNullAt(0));
+    assert(!row.isNullAt(1));
+    row.setNotNull(0);
+    assert(!row.isNullAt(0));
+    assert(!row.isNullAt(1));
   }
 }
