@@ -67,4 +67,31 @@ public class TestMurmur3_x86_32 {
     // A very loose bound.
     Assert.assertTrue(hashcodes.size() > size * 0.95);
   }
+
+  @Test
+  public void randomizedStressTestBytes() {
+    int size = 65536;
+    Random rand = new Random();
+
+    // A set used to track collision rate.
+    Set<Integer> hashcodes = new HashSet<Integer>();
+    for (int i = 0; i < size; i++) {
+      int byteArrSize = rand.nextInt(100) * 8;
+      byte[] bytes = new byte[byteArrSize];
+      rand.nextBytes(bytes);
+      long memoryAddr = PlatformDependent.UNSAFE.allocateMemory(byteArrSize);
+      PlatformDependent.copyMemory(
+        bytes, PlatformDependent.BYTE_ARRAY_OFFSET, null, memoryAddr, byteArrSize);
+
+      Assert.assertEquals(
+        hasher.hashUnsafeWords(null, memoryAddr, byteArrSize),
+        hasher.hashUnsafeWords(null, memoryAddr, byteArrSize));
+
+      hashcodes.add(hasher.hashUnsafeWords(null, memoryAddr, byteArrSize));
+      PlatformDependent.UNSAFE.freeMemory(memoryAddr);
+    }
+
+    // A very loose bound.
+    Assert.assertTrue(hashcodes.size() > size * 0.95);
+  }
 }

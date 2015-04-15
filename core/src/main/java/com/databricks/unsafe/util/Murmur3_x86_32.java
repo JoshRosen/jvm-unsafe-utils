@@ -30,7 +30,7 @@
 package com.databricks.unsafe.util;
 
 /**
- * 32-bit Murmur3 hasher.
+ * 32-bit Murmur3 hasher.  This is based on Guava's Murmur3_32HashFunction.
  */
 public final class Murmur3_x86_32 {
   private static final int C1 = 0xcc9e2d51;
@@ -52,6 +52,21 @@ public final class Murmur3_x86_32 {
     int h1 = mixH1(seed, k1);
 
     return fmix(h1, 4);
+  }
+
+  public int hashUnsafeWords(Object baseObject, long baseOffset, int lengthInBytes) {
+    // See https://code.google.com/p/guava-libraries/source/browse/guava/src/com/google/common/hash/Murmur3_32HashFunction.java#167
+    // TODO(josh) veryify that this was implemented correctly
+    assert (lengthInBytes % 8 == 0): "lengthInBytes must be a multiple of 8 (word-aligned)";
+    int k1 = 0;
+    int h1 = seed;
+    for (int offset = 0; offset < lengthInBytes; offset += 4) {
+      int halfWord = PlatformDependent.UNSAFE.getInt(baseObject, baseOffset + offset);
+
+      k1 ^= halfWord << offset;
+    }
+    h1 ^= mixK1(k1);
+    return fmix(h1, lengthInBytes);
   }
 
   public int hashLong(long input) {
