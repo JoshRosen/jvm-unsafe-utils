@@ -61,6 +61,17 @@ public final class BytesToBytesMap {
    */
   private final List<MemoryBlock> dataPages = new LinkedList<MemoryBlock>();
 
+  private static final long PAGE_SIZE_BYTES = 64000000;
+
+  private MemoryBlock currentDataPage = null;
+
+  /**
+   *
+   */
+  private long pageCursor = 0;
+
+  // TODO: page table should go here, as a 8096-entry pointer array
+
   /**
    * A single array to store the key and value.
    *
@@ -165,6 +176,8 @@ public final class BytesToBytesMap {
         long stored = longArray.get(pos * 2);
         if (((stored & MASK_LONG_UPPER_27_BITS) >> 27) == partialKeyHashCode) {
           // Partial hash code matches. There is a high likelihood this is the place.
+          // TODO(josh): do we actually need to do an equality check at this point?
+          // Should that be left to the caller?
           long pointer = stored & MASK_LONG_LOWER_37_BITS;
           // TODO: -1 is wrong here
           return loc.with(pos, -1, true);
@@ -180,12 +193,10 @@ public final class BytesToBytesMap {
    */
   public final class Location {
     private long pos;
-    private long key;
     private boolean isDefined;
 
-    Location with(long pos, long key, boolean isDefined) {
+    Location with(long pos, boolean isDefined) {
       this.pos = pos;
-      this.key = key;
       this.isDefined = isDefined;
       return this;
     }
@@ -198,28 +209,90 @@ public final class BytesToBytesMap {
     }
 
     /**
-     * Returns the key defined at this position. Unspecified behavior if the key is not defined.
+     * Returns the address of the key defined at this position.
+     * Unspecified behavior if the key is not defined.
      */
-    public long getKey() {
-      return longArray.get(pos * 2);
+    public long getKeyAddress() {
+      final long keyAddress = longArray.get(pos * 2);
+      // TODO
     }
 
     /**
-     * Returns the value defined at this position. Unspecified behavior if the key is not defined.
+     * Returns the length of the key defined at this position.
+     * Unspecified behavior if the key is not defined.
      */
-    public long getValue() {
+    public long getKeyLength() {
+
+    }
+
+    /**
+     * Returns the address of the key defined at this position.
+     * Unspecified behavior if the key is not defined.
+     */
+    public long getValueAddress() {
       return longArray.get(pos * 2 + 1);
     }
 
     /**
-     * Updates the value defined at this position. Unspecified behavior if the key is not defined.
+     * Returns the length of the value defined at this position.
+     * Unspecified behavior if the key is not defined.
      */
-    public void setValue(long value) {
-      if (!isDefined) {
-        size++;
-        bitset.set(pos);
-        longArray.set(pos * 2, key);
+    public long getValueLength() {
+
+    }
+
+    /**
+     * Sets the value defined at this position. Unspecified behavior if the key is not defined.
+     */
+    public void storeKeyAndValue(
+        Object keyBaseObject,
+        long keyBaseOffset,
+        int keyLengthBytes,  // TODO(josh): words?  bytes? eventually, we'll want to be more consistent about this
+        Object valueBaseObject,
+        long valueBaseOffset,
+        long valueLengthBytes) {
+      assert (!isDefined): "Can only set value once for a key";
+      assert (keyLengthBytes % 8 == 0);
+      assert (valueLengthBytes % 8 == 0);
+      // Here, we'll copy the data into our data pages. Because we only store a relative offset from
+      // the key address instead of storing the absolute address of the value, the key and value
+      // must be stored in the same memory page.
+      final long requiredSize = 8 + 8 + keyLengthBytes + valueLengthBytes;
+      assert(requiredSize <= PAGE_SIZE_BYTES);
+      // Bookeeping
+      size++;
+      bitset.set(pos);
+      // If there's not enough space in the current page, allocate a new page:
+      if (PAGE_SIZE_BYTES - pageCursor < requiredSize) {
+        MemoryBlock newPage = allocator.allocate(PAGE_SIZE_BYTES);
+        dataPages.add(newPage);
+        pageCursor = 0;
+        currentDataPage = newPage;
       }
+      // Compute all of our offsets up-front:
+      final Object pageBaseObject = currentDataPage.getBaseObject();
+      final long pageBaseOffset = currentDataPage.getBaseOffset();
+      final long keySizeOffsetInPage = pageBaseOffset + pageCursor;
+      pageCursor += 8;
+      final long keyDataOffsetInPage = pageBaseOffset + pageCursor;
+      pageCursor += keyLengthBytes;
+      final long valueSizeOffsetInPage = pageBaseOffset + pageCursor;
+      pageCursor += 8;
+      final long valueDataOffsetInPage = pageBaseOffset + pageCursor;
+      pageCursor += valueLengthBytes;
+      final long relativeOffsetFromKeyToValue = valueSizeOffsetInPage - keySizeOffsetInPage;
+      assert(relativeOffsetFromKeyToValue > 0);
+      // Copy the key
+      PlatformDependent.UNSAFE.putLong(pageBaseObject, keySizeOffsetInPage, keyLengthBytes);
+      PlatformDependent.UNSAFE.copyMemory(
+        keyBaseObject, keyBaseOffset, pageBaseObject, keyDataOffsetInPage, keyLengthBytes);
+      // Copy the value
+      PlatformDependent.UNSAFE.putLong(pageBaseObject, valueSizeOffsetInPage, valueLengthBytes);
+      PlatformDependent.UNSAFE.copyMemory(
+        keyBaseObject, keyBaseOffset, pageBaseObject, valueDataOffsetInPage, valueLengthBytes);
+      // We need to convert from Object + offset addresses into packed addresses and
+
+      longArray.set(pos * 2, key);
       longArray.set(pos * 2 + 1, value);
     }
   }
