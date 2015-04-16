@@ -182,7 +182,6 @@ public final class BytesToBytesMap {
       int keyRowLengthBytes) {
 
     final int hashcode = HASHER.hashUnsafeWords(keyBaseObject, keyBaseOffset, keyRowLengthBytes);
-    // System.out.println("HASHCODE " + hashcode);  // TODO: remove print statements
     long pos = ((long) hashcode) & mask;
     long step = 1;
     while (true) {
@@ -191,7 +190,6 @@ public final class BytesToBytesMap {
         return loc.with(pos, hashcode, false);
       } else {
         long stored = longArray.get(pos * 2 + 1);
-        // System.out.println("The stored hashcode is " + (stored & MASK_LONG_LOWER_32_BITS));  // TODO: remove print statements
         if ((stored & MASK_LONG_LOWER_32_BITS) == hashcode) {
           // Full hash code matches. There is a high likelihood this is the place.
           return loc.with(pos, hashcode, true);
@@ -253,7 +251,6 @@ public final class BytesToBytesMap {
       // TODO: this is inefficient since we compute the key address twice if the user calls to get
       // the length and then calls again to get the address.
       final MemoryLocation keyAddress = getKeyAddress();
-      System.out.println("The key length offset is " +(keyAddress.getBaseOffset() - 8));
       return PlatformDependent.UNSAFE.getLong(
         keyAddress.getBaseObject(),
         keyAddress.getBaseOffset() - 8
@@ -270,7 +267,6 @@ public final class BytesToBytesMap {
       // The relative offset from the key position to the value position was stored in the upper 32
       // bits of the value long:
       final long offsetFromKeyToValue = (longArray.get(pos * 2 + 1) & ~MASK_LONG_LOWER_32_BITS) >> 32;
-      System.out.println("The actual stored offset from key to value is " + offsetFromKeyToValue);
       final MemoryLocation keyAddress = getKeyAddress();
       valueMemoryLocation.setObjAndOffset(
         keyAddress.getBaseObject(),
@@ -287,7 +283,6 @@ public final class BytesToBytesMap {
       // TODO: this is inefficient since we compute the key address twice if the user calls to get
       // the length and then calls again to get the address.
       final MemoryLocation valueAddress = getValueAddress();
-      System.out.println("The actual value offset is " + (valueAddress.getBaseOffset() - 8));
       return PlatformDependent.UNSAFE.getLong(
         valueAddress.getBaseObject(),
         valueAddress.getBaseOffset() - 8
@@ -345,9 +340,6 @@ public final class BytesToBytesMap {
       PlatformDependent.UNSAFE.copyMemory(
         keyBaseObject, keyBaseOffset, pageBaseObject, keyDataOffsetInPage, keyLengthBytes);
       // Copy the value
-      System.out.println("The key size offset should be " + keySizeOffsetInPage);
-
-      System.out.println("The value size offset should be " + valueSizeOffsetInPage);
       PlatformDependent.UNSAFE.putLong(pageBaseObject, valueSizeOffsetInPage, valueLengthBytes);
       PlatformDependent.UNSAFE.copyMemory(
         valueBaseObject, valueBaseOffset, pageBaseObject, valueDataOffsetInPage, valueLengthBytes);
@@ -362,9 +354,7 @@ public final class BytesToBytesMap {
         storedKeyAddress = keySizeOffsetInPage;
       }
       longArray.set(pos * 2, storedKeyAddress);
-      System.out.println("The expected key->value offset is " + relativeOffsetFromKeyToValue);
       final long storedValueOffsetAndKeyHashcode = (relativeOffsetFromKeyToValue << 32) | keyHascode;
-      System.out.println("The stored value offset and key hashcode is " + storedValueOffsetAndKeyHashcode);
       longArray.set(pos * 2 + 1, storedValueOffsetAndKeyHashcode);
     }
   }
