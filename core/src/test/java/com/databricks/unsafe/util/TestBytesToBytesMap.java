@@ -45,7 +45,9 @@ public class TestBytesToBytesMap {
     final long keyPointer = allocateRandomByteArray(recordLengthWords);
     final long valuePointer = allocateRandomByteArray(recordLengthWords);
     try {
-      map.put(
+      final BytesToBytesMap.Location loc = map.lookup(null, keyPointer, recordLengthBytes);
+      assert(!loc.isDefined());
+      loc.storeKeyAndValue(
         null,
         keyPointer,
         recordLengthBytes,
@@ -53,8 +55,9 @@ public class TestBytesToBytesMap {
         valuePointer,
         recordLengthBytes
       );
-      final BytesToBytesMap.Location loc = map.lookup(null, keyPointer, recordLengthBytes);
-      assert(loc.isDefined());
+      assert(map.lookup(null, keyPointer, recordLengthBytes).isDefined());
+      Assert.assertEquals(recordLengthBytes, loc.getKeyLength());
+      Assert.assertEquals(recordLengthBytes, loc.getValueLength());
     } finally {
       PlatformDependent.UNSAFE.freeMemory(keyPointer);
       PlatformDependent.UNSAFE.freeMemory(valuePointer);

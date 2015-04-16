@@ -41,26 +41,14 @@ public final class BytesToBytesMap {
 
   private static final HashMapGrowthStrategy growthStrategy = HashMapGrowthStrategy.DOUBLING;
 
-  /** Bit mask for the lower 37 bits of a long. */
-  private static final long MASK_LONG_LOWER_37_BITS = 0x1FFFFFFFFFL;
-  // 0b11111_11111111_11111111_11111111_11111111L;
-
-  /** Bit mask for the upper 27 bits of a long. */
-  private static final long MASK_LONG_UPPER_27_BITS = ~MASK_LONG_LOWER_37_BITS;
-
   /** Bit mask for the lower 51 bits of a long. */
   private static final long MASK_LONG_LOWER_51_BITS = 0x7FFFFFFFFFFFFCL;
 
   /** Bit mask for the upper 13 bits of a long */
   private static final long MASK_LONG_UPPER_13_BITS = ~MASK_LONG_LOWER_51_BITS;
 
-  /** Bit mask for the upper 27 bits of an int, i.e. bit 5 - 31 (inclusive) for a long. */
-  private static final int MASK_INT_UPPER_27_BITS;
-  // 0b11111111_11111111_11111111_11100000;
-
-  static {
-    MASK_INT_UPPER_27_BITS = ((1 << 27) - 1) << 5;
-  }
+  /** Bit mask for the lower 32 bits of a long */
+  private static final long MASK_LONG_LOWER_32_BITS = 0xFFFFFFFFL;
 
   private final MemoryAllocator allocator;
 
@@ -102,7 +90,7 @@ public final class BytesToBytesMap {
   /**
    * When using an in-heap allocator, this holds the current page number.
    */
-  private long currentPageNumber = -1;
+  private int currentPageNumber = -1;
 
   /**
    * The number of entries in the page table.
@@ -116,6 +104,7 @@ public final class BytesToBytesMap {
   /**
    * A single array to store the key and value.
    *
+   * // TODO this comment may be out of date; fix it:
    * Position {@code 2 * i} in the array is used to track a pointer to the key at index {@code i},
    * while position {@code 2 * i + 1} in the array holds the upper bits of the key's hashcode plus
    * the relative offset from the key pointer to the value at index {@code i}.
@@ -160,19 +149,6 @@ public final class BytesToBytesMap {
   public long size() { return size; }
 
   /**
-   * Updates the value the key maps to.
-   */
-  public void put(
-      Object keyBaseObject,
-      long keyBaseOffset,
-      long keyRowLength,
-      Object valueBaseObject,
-      long valueBaseOffset,
-      long valueRowLength) {
-    // TODO
-  }
-
-  /**
    * Returns true if the key is defined in this map.
    */
 //  public boolean containsKey(long key) {
@@ -205,25 +181,23 @@ public final class BytesToBytesMap {
       long keyBaseOffset,
       int keyRowLengthBytes) {
 
-    final long hashcode = HASHER.hashUnsafeWords(keyBaseObject, keyBaseOffset, keyRowLengthBytes);
-    final long pos = hashcode & mask;
-    long partialKeyHashCode = (hashcode & MASK_INT_UPPER_27_BITS) >> 5;
+    final int hashcode = HASHER.hashUnsafeWords(keyBaseObject, keyBaseOffset, keyRowLengthBytes);
+    // System.out.println("HASHCODE " + hashcode);  // TODO: remove print statements
+    long pos = ((long) hashcode) & mask;
     long step = 1;
     while (true) {
       if (!bitset.isSet(pos)) {
         // This is a new key.
-        return loc.with(pos, false);
+        return loc.with(pos, hashcode, false);
       } else {
-        long stored = longArray.get(pos * 2);
-        if (((stored & MASK_LONG_UPPER_27_BITS) >> 27) == partialKeyHashCode) {
-          // Partial hash code matches. There is a high likelihood this is the place.
-          // TODO(josh): do we actually need to do an equality check at this point?
-          // Should that be left to the caller?
-          long pointer = stored & MASK_LONG_LOWER_37_BITS;
-          return loc.with(pos, true);
+        long stored = longArray.get(pos * 2 + 1);
+        // System.out.println("The stored hashcode is " + (stored & MASK_LONG_LOWER_32_BITS));  // TODO: remove print statements
+        if ((stored & MASK_LONG_LOWER_32_BITS) == hashcode) {
+          // Full hash code matches. There is a high likelihood this is the place.
+          return loc.with(pos, hashcode, true);
         }
       }
-      //pos = (pos + step) & mask;
+      pos = (pos + step) & mask;
       step++;
     }
   }
@@ -234,12 +208,14 @@ public final class BytesToBytesMap {
   public final class Location {
     private long pos;
     private boolean isDefined;
+    private int keyHascode;
     private final MemoryLocation keyMemoryLocation = new MemoryLocation();
     private final MemoryLocation valueMemoryLocation = new MemoryLocation();
 
-    Location with(long pos, boolean isDefined) {
+    Location with(long pos, int keyHashcode, boolean isDefined) {
       this.pos = pos;
       this.isDefined = isDefined;
+      this.keyHascode = keyHashcode;
       return this;
     }
 
@@ -290,9 +266,9 @@ public final class BytesToBytesMap {
      * For efficiency reasons, calls to this method always returns the same MemoryLocation object.
      */
     public MemoryLocation getValueAddress() {
-      // The relative offset from the key position to the value position was stored in the lower 37
+      // The relative offset from the key position to the value position was stored in the upper 32
       // bits of the value long:
-      final long offsetFromKeyToValue = longArray.get(pos * 2 + 1) & MASK_LONG_LOWER_37_BITS;
+      final long offsetFromKeyToValue = longArray.get(pos * 2 + 1) & ~MASK_LONG_LOWER_32_BITS;
       final MemoryLocation keyAddress = getKeyAddress();
       valueMemoryLocation.setObjAndOffset(
         keyAddress.getBaseObject(),
@@ -338,11 +314,12 @@ public final class BytesToBytesMap {
       bitset.set(pos);
 
       // If there's not enough space in the current page, allocate a new page:
-      if (PAGE_SIZE_BYTES - pageCursor < requiredSize) {
+      if (currentDataPage == null || PAGE_SIZE_BYTES - pageCursor < requiredSize) {
         MemoryBlock newPage = allocator.allocate(PAGE_SIZE_BYTES);
         dataPages.add(newPage);
         pageCursor = 0;
         currentPageNumber++;
+        pageTable[currentPageNumber] = newPage.getBaseObject();
         currentDataPage = newPage;
       }
 
@@ -367,7 +344,7 @@ public final class BytesToBytesMap {
       // Copy the value
       PlatformDependent.UNSAFE.putLong(pageBaseObject, valueSizeOffsetInPage, valueLengthBytes);
       PlatformDependent.UNSAFE.copyMemory(
-        keyBaseObject, keyBaseOffset, pageBaseObject, valueDataOffsetInPage, valueLengthBytes);
+        valueBaseObject, valueBaseOffset, pageBaseObject, valueDataOffsetInPage, valueLengthBytes);
 
       final long storedKeyAddress;
       if (inHeap) {
@@ -379,9 +356,8 @@ public final class BytesToBytesMap {
         storedKeyAddress = keyDataOffsetInPage;
       }
       longArray.set(pos * 2, storedKeyAddress);
-
-      //
-      longArray.set(pos * 2 + 1, value);
+      final long storedValueOffsetAndKeyHashcode = (relativeOffsetFromKeyToValue << 32) | keyHascode;
+      longArray.set(pos * 2 + 1, storedValueOffsetAndKeyHashcode);
     }
   }
 
