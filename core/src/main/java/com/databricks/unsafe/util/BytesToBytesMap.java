@@ -235,12 +235,12 @@ public final class BytesToBytesMap {
     public MemoryLocation getKeyAddress() {
       final long fullKeyAddress = longArray.get(pos * 2);
       if (inHeap) {
-        keyMemoryLocation.setObjAndOffset(null, fullKeyAddress);
-      } else {
         final int keyPageNumber = (int) (fullKeyAddress & MASK_LONG_UPPER_13_BITS);
         assert (keyPageNumber >= 0 && keyPageNumber < PAGE_TABLE_SIZE);
         final long keyOffsetInPage = (fullKeyAddress & MASK_LONG_LOWER_51_BITS);
         keyMemoryLocation.setObjAndOffset(pageTable[keyPageNumber], keyOffsetInPage + 8);
+      } else {
+        keyMemoryLocation.setObjAndOffset(null, fullKeyAddress + 8);
       }
       return keyMemoryLocation;
     }
@@ -253,6 +253,7 @@ public final class BytesToBytesMap {
       // TODO: this is inefficient since we compute the key address twice if the user calls to get
       // the length and then calls again to get the address.
       final MemoryLocation keyAddress = getKeyAddress();
+      System.out.println("The key length offset is " +(keyAddress.getBaseOffset() - 8));
       return PlatformDependent.UNSAFE.getLong(
         keyAddress.getBaseObject(),
         keyAddress.getBaseOffset() - 8
@@ -268,7 +269,8 @@ public final class BytesToBytesMap {
     public MemoryLocation getValueAddress() {
       // The relative offset from the key position to the value position was stored in the upper 32
       // bits of the value long:
-      final long offsetFromKeyToValue = longArray.get(pos * 2 + 1) & ~MASK_LONG_LOWER_32_BITS;
+      final long offsetFromKeyToValue = (longArray.get(pos * 2 + 1) & ~MASK_LONG_LOWER_32_BITS) >> 32;
+      System.out.println("The actual stored offset from key to value is " + offsetFromKeyToValue);
       final MemoryLocation keyAddress = getKeyAddress();
       valueMemoryLocation.setObjAndOffset(
         keyAddress.getBaseObject(),
@@ -285,6 +287,7 @@ public final class BytesToBytesMap {
       // TODO: this is inefficient since we compute the key address twice if the user calls to get
       // the length and then calls again to get the address.
       final MemoryLocation valueAddress = getValueAddress();
+      System.out.println("The actual value offset is " + (valueAddress.getBaseOffset() - 8));
       return PlatformDependent.UNSAFE.getLong(
         valueAddress.getBaseObject(),
         valueAddress.getBaseOffset() - 8
@@ -342,6 +345,9 @@ public final class BytesToBytesMap {
       PlatformDependent.UNSAFE.copyMemory(
         keyBaseObject, keyBaseOffset, pageBaseObject, keyDataOffsetInPage, keyLengthBytes);
       // Copy the value
+      System.out.println("The key size offset should be " + keySizeOffsetInPage);
+
+      System.out.println("The value size offset should be " + valueSizeOffsetInPage);
       PlatformDependent.UNSAFE.putLong(pageBaseObject, valueSizeOffsetInPage, valueLengthBytes);
       PlatformDependent.UNSAFE.copyMemory(
         valueBaseObject, valueBaseOffset, pageBaseObject, valueDataOffsetInPage, valueLengthBytes);
@@ -353,10 +359,12 @@ public final class BytesToBytesMap {
         storedKeyAddress = (currentPageNumber << 51) | (keySizeOffsetInPage);
       } else {
         // Otherwise, just store the raw memory address
-        storedKeyAddress = keyDataOffsetInPage;
+        storedKeyAddress = keySizeOffsetInPage;
       }
       longArray.set(pos * 2, storedKeyAddress);
+      System.out.println("The expected key->value offset is " + relativeOffsetFromKeyToValue);
       final long storedValueOffsetAndKeyHashcode = (relativeOffsetFromKeyToValue << 32) | keyHascode;
+      System.out.println("The stored value offset and key hashcode is " + storedValueOffsetAndKeyHashcode);
       longArray.set(pos * 2 + 1, storedValueOffsetAndKeyHashcode);
     }
   }
@@ -398,6 +406,10 @@ public final class BytesToBytesMap {
 
     // Allocate the new data structures
     allocate(growthStrategy.nextCapacity(oldCapacity));
+
+    // TODO: all of this re-hashing logic needs to be revisited and tested, since it hasn't been
+    // updated to reflect the new changes in this map, plus we don't need to re-hash the keys; we
+    // only need to re-mask the cached hashcode.
 
     // Re-hash
     for (long pos = oldBitSet.nextSetBit(0); pos >= 0; pos = oldBitSet.nextSetBit(pos + 1)) {

@@ -1,6 +1,5 @@
 package com.databricks.unsafe.util;
 
-
 import com.databricks.unsafe.util.memory.MemoryAllocator;
 import org.junit.Assert;
 import org.junit.Test;
