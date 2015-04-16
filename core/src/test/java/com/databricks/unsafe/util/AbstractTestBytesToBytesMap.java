@@ -67,6 +67,42 @@ public abstract class AbstractTestBytesToBytesMap {
       assert(map.lookup(key.getBaseObject(), key.getBaseOffset(), recordLengthBytes).isDefined());
       Assert.assertEquals(recordLengthBytes, loc.getKeyLength());
       Assert.assertEquals(recordLengthBytes, loc.getValueLength());
+
+      final byte[] expectedKeyData = new byte[recordLengthBytes];
+      PlatformDependent.UNSAFE.copyMemory(
+        key.getBaseObject(),
+        key.getBaseOffset(),
+        expectedKeyData,
+        PlatformDependent.BYTE_ARRAY_OFFSET,
+        recordLengthBytes
+      );
+      final byte[] actualKeyData = new byte[recordLengthBytes];
+      PlatformDependent.UNSAFE.copyMemory(
+        loc.getKeyAddress().getBaseObject(),
+        loc.getKeyAddress().getBaseOffset(),
+        actualKeyData,
+        PlatformDependent.BYTE_ARRAY_OFFSET,
+        recordLengthBytes
+      );
+      Assert.assertArrayEquals(expectedKeyData, actualKeyData);
+
+      final byte[] expectedValueData = new byte[recordLengthBytes];
+      PlatformDependent.UNSAFE.copyMemory(
+        value.getBaseObject(),
+        value.getBaseOffset(),
+        expectedValueData,
+        PlatformDependent.BYTE_ARRAY_OFFSET,
+        recordLengthBytes
+      );
+      final byte[] actualValueData = new byte[recordLengthBytes];
+      PlatformDependent.UNSAFE.copyMemory(
+        loc.getValueAddress().getBaseObject(),
+        loc.getValueAddress().getBaseOffset(),
+        actualValueData,
+        PlatformDependent.BYTE_ARRAY_OFFSET,
+        recordLengthBytes
+      );
+      Assert.assertArrayEquals(expectedValueData, actualValueData);
     } finally {
       allocator.free(key);
       allocator.free(value);
