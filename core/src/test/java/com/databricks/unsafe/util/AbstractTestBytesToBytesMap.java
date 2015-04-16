@@ -103,6 +103,20 @@ public abstract class AbstractTestBytesToBytesMap {
         recordLengthBytes
       );
       Assert.assertArrayEquals(expectedValueData, actualValueData);
+
+      try {
+        loc.storeKeyAndValue(
+          key.getBaseObject(),
+          key.getBaseOffset(),
+          recordLengthBytes,
+          value.getBaseObject(),
+          value.getBaseOffset(),
+          recordLengthBytes
+        );
+        Assert.fail("Should not be able to set a new value for a key");
+      } catch (IllegalStateException e) {
+        // Expected exception; do nothing.
+      }
     } finally {
       allocator.free(key);
       allocator.free(value);

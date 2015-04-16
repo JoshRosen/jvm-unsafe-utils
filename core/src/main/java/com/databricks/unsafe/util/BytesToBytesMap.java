@@ -299,7 +299,9 @@ public final class BytesToBytesMap {
         Object valueBaseObject,
         long valueBaseOffset,
         long valueLengthBytes) {
-      assert (!isDefined): "Can only set value once for a key";
+      if (isDefined) {
+        throw new IllegalStateException("Can only set value once for a key");
+      }
       assert (keyLengthBytes % 8 == 0);
       assert (valueLengthBytes % 8 == 0);
       // Here, we'll copy the data into our data pages. Because we only store a relative offset from
