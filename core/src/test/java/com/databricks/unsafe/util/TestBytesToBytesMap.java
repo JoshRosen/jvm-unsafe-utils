@@ -36,4 +36,29 @@ public class TestBytesToBytesMap {
       map.free();
     }
   }
+
+  @Test
+  public void setAndRetrieveAKey() {
+    BytesToBytesMap map = new BytesToBytesMap(MemoryAllocator.UNSAFE, 64);
+    final int recordLengthWords = 10;
+    final int recordLengthBytes = recordLengthWords * 8;
+    final long keyPointer = allocateRandomByteArray(recordLengthWords);
+    final long valuePointer = allocateRandomByteArray(recordLengthWords);
+    try {
+      map.put(
+        null,
+        keyPointer,
+        recordLengthBytes,
+        null,
+        valuePointer,
+        recordLengthBytes
+      );
+      final BytesToBytesMap.Location loc = map.lookup(null, keyPointer, recordLengthBytes);
+      assert(loc.isDefined());
+    } finally {
+      PlatformDependent.UNSAFE.freeMemory(keyPointer);
+      PlatformDependent.UNSAFE.freeMemory(valuePointer);
+      map.free();
+    }
+  }
 }

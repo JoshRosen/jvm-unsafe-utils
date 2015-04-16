@@ -16,8 +16,10 @@
 
 package com.databricks.unsafe.util;
 
+import com.databricks.unsafe.util.memory.HeapMemoryAllocator;
 import com.databricks.unsafe.util.memory.MemoryAllocator;
 import com.databricks.unsafe.util.memory.MemoryBlock;
+import com.databricks.unsafe.util.memory.MemoryLocation;
 
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -46,6 +48,12 @@ public final class BytesToBytesMap {
   /** Bit mask for the upper 27 bits of a long. */
   private static final long MASK_LONG_UPPER_27_BITS = ~MASK_LONG_LOWER_37_BITS;
 
+  /** Bit mask for the lower 51 bits of a long. */
+  private static final long MASK_LONG_LOWER_51_BITS = 0x7FFFFFFFFFFFFCL;
+
+  /** Bit mask for the upper 13 bits of a long */
+  private static final long MASK_LONG_UPPER_13_BITS = ~MASK_LONG_LOWER_51_BITS;
+
   /** Bit mask for the upper 27 bits of an int, i.e. bit 5 - 31 (inclusive) for a long. */
   private static final int MASK_INT_UPPER_27_BITS;
   // 0b11111111_11111111_11111111_11100000;
@@ -57,20 +65,53 @@ public final class BytesToBytesMap {
   private final MemoryAllocator allocator;
 
   /**
+   * Tracks whether we're using in-heap or off-heap addresses.
+   */
+  private final boolean inHeap;
+
+  /**
    * A linked list for tracking all allocated data pages so that we can free all of our memory.
    */
   private final List<MemoryBlock> dataPages = new LinkedList<MemoryBlock>();
 
   private static final long PAGE_SIZE_BYTES = 64000000;
 
+  /**
+   * The data page that will be used to store keys and values for new hashtable entries. When this
+   * page becomes full, a new page will be allocated and this pointer will change to point to that
+   * new page.
+   */
   private MemoryBlock currentDataPage = null;
 
   /**
-   *
+   * Offset into `currentDataPage` that points to the location where new data can be inserted into
+   * the page.
    */
   private long pageCursor = 0;
 
-  // TODO: page table should go here, as a 8096-entry pointer array
+  /**
+   * Similar to an operating system's page table, this array maps page numbers into base object
+   * pointers, allowing us to translate between the hashtable's internal 64-bit address
+   * representation and the baseObject+offset representation which we use to support both in- and
+   * off-heap addresses. When using an off-heap allocator, every entry in this map will be `null`.
+   * When using an in-heap allocator, the entries in this map will point to pages' base objects.
+   * Entries are added to this map as new data pages are allocated.
+   */
+  private final Object[] pageTable = new Object[PAGE_TABLE_SIZE];
+
+  /**
+   * When using an in-heap allocator, this holds the current page number.
+   */
+  private long currentPageNumber = -1;
+
+  /**
+   * The number of entries in the page table.
+   */
+  private static final int PAGE_TABLE_SIZE = 8096;  // Use the upper 13 bits to address the table.
+
+  // TODO: This page table size places a limit on the maximum page size. We should account for this
+  // somewhere as part of final cleanup in this file.
+
 
   /**
    * A single array to store the key and value.
@@ -102,6 +143,7 @@ public final class BytesToBytesMap {
 
 
   public BytesToBytesMap(MemoryAllocator allocator, long initialCapacity, double loadFactor) {
+    this.inHeap = allocator instanceof HeapMemoryAllocator;
     this.allocator = allocator;
     this.loadFactor = loadFactor;
     this.loc = new Location();
@@ -170,8 +212,7 @@ public final class BytesToBytesMap {
     while (true) {
       if (!bitset.isSet(pos)) {
         // This is a new key.
-        // TODO: -1 is wrong here
-        return loc.with(pos, -1, false);
+        return loc.with(pos, false);
       } else {
         long stored = longArray.get(pos * 2);
         if (((stored & MASK_LONG_UPPER_27_BITS) >> 27) == partialKeyHashCode) {
@@ -179,8 +220,7 @@ public final class BytesToBytesMap {
           // TODO(josh): do we actually need to do an equality check at this point?
           // Should that be left to the caller?
           long pointer = stored & MASK_LONG_LOWER_37_BITS;
-          // TODO: -1 is wrong here
-          return loc.with(pos, -1, true);
+          return loc.with(pos, true);
         }
       }
       //pos = (pos + step) & mask;
@@ -194,6 +234,8 @@ public final class BytesToBytesMap {
   public final class Location {
     private long pos;
     private boolean isDefined;
+    private final MemoryLocation keyMemoryLocation = new MemoryLocation();
+    private final MemoryLocation valueMemoryLocation = new MemoryLocation();
 
     Location with(long pos, boolean isDefined) {
       this.pos = pos;
@@ -210,11 +252,21 @@ public final class BytesToBytesMap {
 
     /**
      * Returns the address of the key defined at this position.
+     * This points to the first byte of the key data.
      * Unspecified behavior if the key is not defined.
+     * For efficiency reasons, calls to this method always returns the same MemoryLocation object.
      */
-    public long getKeyAddress() {
-      final long keyAddress = longArray.get(pos * 2);
-      // TODO
+    public MemoryLocation getKeyAddress() {
+      final long fullKeyAddress = longArray.get(pos * 2);
+      if (inHeap) {
+        keyMemoryLocation.setObjAndOffset(null, fullKeyAddress);
+      } else {
+        final int keyPageNumber = (int) (fullKeyAddress & MASK_LONG_UPPER_13_BITS);
+        assert (keyPageNumber >= 0 && keyPageNumber < PAGE_TABLE_SIZE);
+        final long keyOffsetInPage = (fullKeyAddress & MASK_LONG_LOWER_51_BITS);
+        keyMemoryLocation.setObjAndOffset(pageTable[keyPageNumber], keyOffsetInPage + 8);
+      }
+      return keyMemoryLocation;
     }
 
     /**
@@ -222,15 +274,31 @@ public final class BytesToBytesMap {
      * Unspecified behavior if the key is not defined.
      */
     public long getKeyLength() {
-
+      // TODO: this is inefficient since we compute the key address twice if the user calls to get
+      // the length and then calls again to get the address.
+      final MemoryLocation keyAddress = getKeyAddress();
+      return PlatformDependent.UNSAFE.getLong(
+        keyAddress.getBaseObject(),
+        keyAddress.getBaseOffset() - 8
+      );
     }
 
     /**
-     * Returns the address of the key defined at this position.
+     * Returns the address of the value defined at this position.
+     * This points to the first byte of the value data.
      * Unspecified behavior if the key is not defined.
+     * For efficiency reasons, calls to this method always returns the same MemoryLocation object.
      */
-    public long getValueAddress() {
-      return longArray.get(pos * 2 + 1);
+    public MemoryLocation getValueAddress() {
+      // The relative offset from the key position to the value position was stored in the lower 37
+      // bits of the value long:
+      final long offsetFromKeyToValue = longArray.get(pos * 2 + 1) & MASK_LONG_LOWER_37_BITS;
+      final MemoryLocation keyAddress = getKeyAddress();
+      valueMemoryLocation.setObjAndOffset(
+        keyAddress.getBaseObject(),
+        keyAddress.getBaseOffset() + offsetFromKeyToValue
+      );
+      return valueMemoryLocation;
     }
 
     /**
@@ -238,7 +306,13 @@ public final class BytesToBytesMap {
      * Unspecified behavior if the key is not defined.
      */
     public long getValueLength() {
-
+      // TODO: this is inefficient since we compute the key address twice if the user calls to get
+      // the length and then calls again to get the address.
+      final MemoryLocation valueAddress = getValueAddress();
+      return PlatformDependent.UNSAFE.getLong(
+        valueAddress.getBaseObject(),
+        valueAddress.getBaseOffset() - 8
+      );
     }
 
     /**
@@ -262,13 +336,16 @@ public final class BytesToBytesMap {
       // Bookeeping
       size++;
       bitset.set(pos);
+
       // If there's not enough space in the current page, allocate a new page:
       if (PAGE_SIZE_BYTES - pageCursor < requiredSize) {
         MemoryBlock newPage = allocator.allocate(PAGE_SIZE_BYTES);
         dataPages.add(newPage);
         pageCursor = 0;
+        currentPageNumber++;
         currentDataPage = newPage;
       }
+
       // Compute all of our offsets up-front:
       final Object pageBaseObject = currentDataPage.getBaseObject();
       final long pageBaseOffset = currentDataPage.getBaseOffset();
@@ -282,6 +359,7 @@ public final class BytesToBytesMap {
       pageCursor += valueLengthBytes;
       final long relativeOffsetFromKeyToValue = valueSizeOffsetInPage - keySizeOffsetInPage;
       assert(relativeOffsetFromKeyToValue > 0);
+
       // Copy the key
       PlatformDependent.UNSAFE.putLong(pageBaseObject, keySizeOffsetInPage, keyLengthBytes);
       PlatformDependent.UNSAFE.copyMemory(
@@ -290,9 +368,19 @@ public final class BytesToBytesMap {
       PlatformDependent.UNSAFE.putLong(pageBaseObject, valueSizeOffsetInPage, valueLengthBytes);
       PlatformDependent.UNSAFE.copyMemory(
         keyBaseObject, keyBaseOffset, pageBaseObject, valueDataOffsetInPage, valueLengthBytes);
-      // We need to convert from Object + offset addresses into packed addresses and
 
-      longArray.set(pos * 2, key);
+      final long storedKeyAddress;
+      if (inHeap) {
+        // If we're in-heap, then we need to store the page number in the upper 13 bits of the
+        // address
+        storedKeyAddress = (currentPageNumber << 51) | (keySizeOffsetInPage);
+      } else {
+        // Otherwise, just store the raw memory address
+        storedKeyAddress = keyDataOffsetInPage;
+      }
+      longArray.set(pos * 2, storedKeyAddress);
+
+      //
       longArray.set(pos * 2 + 1, value);
     }
   }
