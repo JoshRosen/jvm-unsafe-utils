@@ -302,6 +302,7 @@ public final class BytesToBytesMap {
       if (isDefined) {
         throw new IllegalStateException("Can only set value once for a key");
       }
+      isDefined = true;
       assert (keyLengthBytes % 8 == 0);
       assert (valueLengthBytes % 8 == 0);
       // Here, we'll copy the data into our data pages. Because we only store a relative offset from
@@ -358,6 +359,9 @@ public final class BytesToBytesMap {
       longArray.set(pos * 2, storedKeyAddress);
       final long storedValueOffsetAndKeyHashcode = (relativeOffsetFromKeyToValue << 32) | keyHascode;
       longArray.set(pos * 2 + 1, storedValueOffsetAndKeyHashcode);
+      if (size > growthThreshold) {
+        growAndRehash();
+      }
     }
   }
 
@@ -399,15 +403,12 @@ public final class BytesToBytesMap {
     // Allocate the new data structures
     allocate(growthStrategy.nextCapacity(oldCapacity));
 
-    // TODO: all of this re-hashing logic needs to be revisited and tested, since it hasn't been
-    // updated to reflect the new changes in this map, plus we don't need to re-hash the keys; we
-    // only need to re-mask the cached hashcode.
-
     // Re-hash
     for (long pos = oldBitSet.nextSetBit(0); pos >= 0; pos = oldBitSet.nextSetBit(pos + 1)) {
-      final long key = oldLongArray.get(pos * 2);
-      final long value = oldLongArray.get(pos * 2 + 1);
-      long newPos = HASHER.hashLong(key) & mask;
+      final long keyPointer = oldLongArray.get(pos * 2);
+      final long valueOffsetPlusHashcode = oldLongArray.get(pos * 2 + 1);
+      final long hashcode = valueOffsetPlusHashcode & MASK_LONG_LOWER_32_BITS;
+      long newPos = hashcode & mask;
       long step = 1;
       boolean keepGoing = true;
 
@@ -415,8 +416,8 @@ public final class BytesToBytesMap {
       // the similar code path in addWithoutResize.
       while (keepGoing) {
         if (!bitset.isSet(newPos)) {
-          longArray.set(newPos * 2, key);
-          longArray.set(newPos * 2 + 1, value);
+          longArray.set(newPos * 2, keyPointer);
+          longArray.set(newPos * 2 + 1, valueOffsetPlusHashcode);
           bitset.set(newPos);
           keepGoing = false;
         } else {
