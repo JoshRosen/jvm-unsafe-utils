@@ -374,7 +374,7 @@ public final class BytesToBytesMap {
       }
       longArray.set(pos * 2, storedKeyAddress);
       final long storedValueOffsetAndKeyHashcode =
-        (relativeOffsetFromKeyToValue << 32) | keyHashcode;
+        (relativeOffsetFromKeyToValue << 32) | (keyHashcode & MASK_LONG_LOWER_32_BITS);
       longArray.set(pos * 2 + 1, storedValueOffsetAndKeyHashcode);
       if (size > growthThreshold) {
         growAndRehash();

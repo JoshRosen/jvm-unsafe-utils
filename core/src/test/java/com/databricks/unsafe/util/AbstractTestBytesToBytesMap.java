@@ -36,7 +36,7 @@ public abstract class AbstractTestBytesToBytesMap {
   }
 
   protected byte[] getRandomByteArray(int numWords) {
-    assert(numWords > 0);
+    Assert.assertTrue(numWords > 0);
     final int lengthInBytes = numWords * 8;
     final byte[] bytes = new byte[lengthInBytes];
     rand.nextBytes(bytes);
@@ -63,7 +63,7 @@ public abstract class AbstractTestBytesToBytesMap {
     try {
       final BytesToBytesMap.Location loc =
         map.lookup(keyData, BYTE_ARRAY_OFFSET, recordLengthBytes);
-      assert(!loc.isDefined());
+      Assert.assertFalse(loc.isDefined());
       loc.storeKeyAndValue(
         keyData,
         BYTE_ARRAY_OFFSET,
@@ -72,15 +72,12 @@ public abstract class AbstractTestBytesToBytesMap {
         BYTE_ARRAY_OFFSET,
         recordLengthBytes
       );
-      assert(map.lookup(keyData, BYTE_ARRAY_OFFSET, recordLengthBytes).isDefined());
+      Assert.assertTrue(map.lookup(keyData, BYTE_ARRAY_OFFSET, recordLengthBytes).isDefined());
       Assert.assertEquals(recordLengthBytes, loc.getKeyLength());
       Assert.assertEquals(recordLengthBytes, loc.getValueLength());
 
-      final byte[] actualKeyData = getByteArray(loc.getKeyAddress(), recordLengthBytes);
-      Assert.assertArrayEquals(keyData, actualKeyData);
-
-      final byte[] actualValueData = getByteArray(loc.getValueAddress(), recordLengthBytes);
-      Assert.assertArrayEquals(valueData, actualValueData);
+      Assert.assertArrayEquals(keyData, getByteArray(loc.getKeyAddress(), recordLengthBytes));
+      Assert.assertArrayEquals(valueData, getByteArray(loc.getValueAddress(), recordLengthBytes));
 
       try {
         loc.storeKeyAndValue(
@@ -120,7 +117,7 @@ public abstract class AbstractTestBytesToBytesMap {
             BYTE_ARRAY_OFFSET,
             key.length
           );
-          assert(!loc.isDefined());
+          Assert.assertFalse(loc.isDefined());
           loc.storeKeyAndValue(
             key,
             BYTE_ARRAY_OFFSET,
@@ -129,7 +126,7 @@ public abstract class AbstractTestBytesToBytesMap {
             BYTE_ARRAY_OFFSET,
             value.length
           );
-          assert(loc.isDefined());
+          Assert.assertTrue(loc.isDefined());
         }
       }
 
@@ -137,7 +134,9 @@ public abstract class AbstractTestBytesToBytesMap {
         final byte[] key = entry.getKey().array();
         final byte[] value = entry.getValue();
         final BytesToBytesMap.Location loc = map.lookup(key, BYTE_ARRAY_OFFSET, key.length);
-        assert(loc.isDefined());
+        Assert.assertTrue(loc.isDefined());
+        Assert.assertArrayEquals(key, getByteArray(loc.getKeyAddress(), key.length));
+        Assert.assertArrayEquals(value, getByteArray(loc.getValueAddress(), value.length));
       }
     } finally {
       map.free();
