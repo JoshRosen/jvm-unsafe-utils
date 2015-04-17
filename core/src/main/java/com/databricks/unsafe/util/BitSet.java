@@ -106,28 +106,10 @@ public final class BitSet {
    * @return the index of the next set bit, or -1 if there is no such bit
    */
   public long nextSetBit(long fromIndex) {
-    long wi = fromIndex >> 6;
-    if (wi >= numWords) {
-      return -1;
-    }
-
-    // Try to find the next set bit in the current word
-    final long subIndex = fromIndex & 0x3f;
-    long word = words.get(wi) >> subIndex;
-    if (word != 0) {
-      return (wi << 6) + subIndex + java.lang.Long.numberOfTrailingZeros(word);
-    }
-
-    // Find the next set bit in the rest of the words
-    wi += 1;
-    while (wi < numWords) {
-      word = words.get(wi);
-      if (word != 0) {
-        return (wi << 6) + java.lang.Long.numberOfTrailingZeros(word);
-      }
-      wi += 1;
-    }
-
-    return -1;
+    return BitSetMethods.nextSetBit(
+      words.memoryBlock().getBaseObject(),
+      words.memoryBlock().getBaseOffset(),
+      fromIndex,
+      numWords);
   }
 }

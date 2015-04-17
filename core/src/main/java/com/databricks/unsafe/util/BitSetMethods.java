@@ -48,4 +48,52 @@ public final class BitSetMethods {
     final long word = PlatformDependent.UNSAFE.getLong(baseObject, wordOffset);
     return (word & mask) != 0;
   }
+
+  /**
+   * Returns the index of the first bit that is set to true that occurs on or after the
+   * specified starting index. If no such bit exists then {@code -1} is returned.
+   * <p>
+   * To iterate over the true bits in a BitSet, use the following loop:
+   * <pre>
+   * <code>
+   *  for (long i = bs.nextSetBit(0, sizeInWords); i >= 0; i = bs.nextSetBit(i + 1, sizeInWords)) {
+   *    // operate on index i here
+   *  }
+   * </code>
+   * </pre>
+   *
+   * @param fromIndex the index to start checking from (inclusive)
+   * @param bitsetSizeInWords the size of the bitset, measured in 8-byte words
+   * @return the index of the next set bit, or -1 if there is no such bit
+   */
+  public static long nextSetBit(
+      Object baseObject,
+      long baseOffset,
+      long fromIndex,
+      long bitsetSizeInWords) {
+    long wi = fromIndex >> 6;
+    if (wi >= bitsetSizeInWords) {
+      return -1;
+    }
+
+    // Try to find the next set bit in the current word
+    final long subIndex = fromIndex & 0x3f;
+    long word =
+      PlatformDependent.UNSAFE.getLong(baseObject, baseOffset + wi * WORD_SIZE) >> subIndex;
+    if (word != 0) {
+      return (wi << 6) + subIndex + java.lang.Long.numberOfTrailingZeros(word);
+    }
+
+    // Find the next set bit in the rest of the words
+    wi += 1;
+    while (wi < bitsetSizeInWords) {
+      word = PlatformDependent.UNSAFE.getLong(baseObject, baseOffset + wi * WORD_SIZE);
+      if (word != 0) {
+        return (wi << 6) + java.lang.Long.numberOfTrailingZeros(word);
+      }
+      wi += 1;
+    }
+
+    return -1;
+  }
 }
