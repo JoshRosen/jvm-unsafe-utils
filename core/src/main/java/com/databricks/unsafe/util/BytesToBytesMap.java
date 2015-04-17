@@ -42,7 +42,7 @@ public final class BytesToBytesMap {
   private static final HashMapGrowthStrategy growthStrategy = HashMapGrowthStrategy.DOUBLING;
 
   /** Bit mask for the lower 51 bits of a long. */
-  private static final long MASK_LONG_LOWER_51_BITS = 0x7FFFFFFFFFFFFCL;
+  private static final long MASK_LONG_LOWER_51_BITS = 0x7FFFFFFFFFFFFL;
 
   /** Bit mask for the upper 13 bits of a long */
   private static final long MASK_LONG_UPPER_13_BITS = ~MASK_LONG_LOWER_51_BITS;
@@ -190,9 +190,22 @@ public final class BytesToBytesMap {
         return loc.with(pos, hashcode, false);
       } else {
         long stored = longArray.get(pos * 2 + 1);
-        if ((stored & MASK_LONG_LOWER_32_BITS) == hashcode) {
-          // Full hash code matches. There is a high likelihood this is the place.
-          return loc.with(pos, hashcode, true);
+        if (((int) (stored & MASK_LONG_LOWER_32_BITS)) == hashcode) {
+          // Full hash code matches.  Let's compare the keys for equality.
+          loc.with(pos, hashcode, false);
+          if (loc.getKeyLength() == keyRowLengthBytes) {
+            final MemoryLocation keyAddress = loc.getKeyAddress();
+            final Object storedKeyBaseObject = keyAddress.getBaseObject();
+            final long storedKeyBaseOffset = keyAddress.getBaseOffset();
+            for (int i = 0; i < keyRowLengthBytes; i += 8) {
+              final long expected =
+                PlatformDependent.UNSAFE.getLong(keyBaseObject, keyBaseOffset + i);
+              final long actual =
+                PlatformDependent.UNSAFE.getLong(storedKeyBaseObject, storedKeyBaseOffset + i);
+              if (actual != expected) break;
+            }
+            return loc.with(pos, hashcode, true);
+          }
         }
       }
       pos = (pos + step) & mask;
@@ -206,14 +219,14 @@ public final class BytesToBytesMap {
   public final class Location {
     private long pos;
     private boolean isDefined;
-    private int keyHascode;
+    private int keyHashcode;
     private final MemoryLocation keyMemoryLocation = new MemoryLocation();
     private final MemoryLocation valueMemoryLocation = new MemoryLocation();
 
     Location with(long pos, int keyHashcode, boolean isDefined) {
       this.pos = pos;
       this.isDefined = isDefined;
-      this.keyHascode = keyHashcode;
+      this.keyHashcode = keyHashcode;
       return this;
     }
 
@@ -233,8 +246,11 @@ public final class BytesToBytesMap {
     public MemoryLocation getKeyAddress() {
       final long fullKeyAddress = longArray.get(pos * 2);
       if (inHeap) {
-        final int keyPageNumber = (int) (fullKeyAddress & MASK_LONG_UPPER_13_BITS);
+        final int keyPageNumber = (int) ((fullKeyAddress & MASK_LONG_UPPER_13_BITS) >>> 51);
         assert (keyPageNumber >= 0 && keyPageNumber < PAGE_TABLE_SIZE);
+        assert (keyPageNumber <= currentPageNumber);
+        final Object page = pageTable[keyPageNumber];
+        assert (page != null);
         final long keyOffsetInPage = (fullKeyAddress & MASK_LONG_LOWER_51_BITS);
         keyMemoryLocation.setObjAndOffset(pageTable[keyPageNumber], keyOffsetInPage + 8);
       } else {
@@ -266,7 +282,7 @@ public final class BytesToBytesMap {
     public MemoryLocation getValueAddress() {
       // The relative offset from the key position to the value position was stored in the upper 32
       // bits of the value long:
-      final long offsetFromKeyToValue = (longArray.get(pos * 2 + 1) & ~MASK_LONG_LOWER_32_BITS) >> 32;
+      final long offsetFromKeyToValue = (longArray.get(pos * 2 + 1) & ~MASK_LONG_LOWER_32_BITS) >>> 32;
       final MemoryLocation keyAddress = getKeyAddress();
       valueMemoryLocation.setObjAndOffset(
         keyAddress.getBaseObject(),
@@ -351,13 +367,14 @@ public final class BytesToBytesMap {
       if (inHeap) {
         // If we're in-heap, then we need to store the page number in the upper 13 bits of the
         // address
-        storedKeyAddress = (currentPageNumber << 51) | (keySizeOffsetInPage);
+        storedKeyAddress = (((long) currentPageNumber) << 51) | (keySizeOffsetInPage & MASK_LONG_LOWER_51_BITS);
       } else {
         // Otherwise, just store the raw memory address
         storedKeyAddress = keySizeOffsetInPage;
       }
       longArray.set(pos * 2, storedKeyAddress);
-      final long storedValueOffsetAndKeyHashcode = (relativeOffsetFromKeyToValue << 32) | keyHascode;
+      final long storedValueOffsetAndKeyHashcode =
+        (relativeOffsetFromKeyToValue << 32) | keyHashcode;
       longArray.set(pos * 2 + 1, storedValueOffsetAndKeyHashcode);
       if (size > growthThreshold) {
         growAndRehash();
@@ -403,12 +420,12 @@ public final class BytesToBytesMap {
     // Allocate the new data structures
     allocate(growthStrategy.nextCapacity(oldCapacity));
 
-    // Re-hash
+    // Re-mask (we don't recompute the hashcode because we stored all 32 bits of it)
     for (long pos = oldBitSet.nextSetBit(0); pos >= 0; pos = oldBitSet.nextSetBit(pos + 1)) {
       final long keyPointer = oldLongArray.get(pos * 2);
       final long valueOffsetPlusHashcode = oldLongArray.get(pos * 2 + 1);
-      final long hashcode = valueOffsetPlusHashcode & MASK_LONG_LOWER_32_BITS;
-      long newPos = hashcode & mask;
+      final int hashcode = (int) (valueOffsetPlusHashcode & MASK_LONG_LOWER_32_BITS);
+      long newPos = ((long) hashcode) & mask;
       long step = 1;
       boolean keepGoing = true;
 

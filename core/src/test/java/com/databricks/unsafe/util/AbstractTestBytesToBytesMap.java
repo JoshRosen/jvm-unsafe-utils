@@ -1,7 +1,6 @@
 package com.databricks.unsafe.util;
 
 import com.databricks.unsafe.util.memory.MemoryAllocator;
-import com.databricks.unsafe.util.memory.MemoryBlock;
 import com.databricks.unsafe.util.memory.MemoryLocation;
 import static com.databricks.unsafe.util.PlatformDependent.BYTE_ARRAY_OFFSET;
 import org.junit.Assert;
@@ -112,8 +111,8 @@ public abstract class AbstractTestBytesToBytesMap {
     try {
       // Fill the map to 90% full so that we can trigger probing
       for (int i = 0; i < size * 0.9; i++) {
-        final byte[] key = getRandomByteArray(rand.nextInt(100) + 1);
-        final byte[] value = getRandomByteArray(rand.nextInt(100) + 1);
+        final byte[] key = getRandomByteArray(rand.nextInt(256) + 1);
+        final byte[] value = getRandomByteArray(rand.nextInt(512) + 1);
         if (!expected.containsKey(ByteBuffer.wrap(key))) {
           expected.put(ByteBuffer.wrap(key), value);
           final BytesToBytesMap.Location loc = map.lookup(
@@ -136,7 +135,6 @@ public abstract class AbstractTestBytesToBytesMap {
 
       for (Map.Entry<ByteBuffer, byte[]> entry : expected.entrySet()) {
         final byte[] key = entry.getKey().array();
-        System.out.println(key);
         final byte[] value = entry.getValue();
         final BytesToBytesMap.Location loc = map.lookup(key, BYTE_ARRAY_OFFSET, key.length);
         assert(loc.isDefined());
