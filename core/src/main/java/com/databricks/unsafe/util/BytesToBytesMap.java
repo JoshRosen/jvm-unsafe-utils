@@ -408,6 +408,14 @@ public final class BytesToBytesMap {
     assert(dataPages.isEmpty());
   }
 
+  /** Returns the total amount of memory, in bytes, consumed by this map's managed structures. */
+  public long getTotalMemoryConsumption() {
+    return (
+      dataPages.size() * PAGE_SIZE_BYTES +
+      bitset.memoryBlock().size() +
+      longArray.memoryBlock().size());
+  }
+
   /**
    * Grows the size of the hash table and re-hash everything.
    */
