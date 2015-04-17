@@ -26,7 +26,7 @@ public final class Row {
 
   public Row(MemoryLocation memory, int numFields) {
     assert numFields >= 0 : "numFields should >= 0";
-    this.bitSetWidth = ((numFields / 64) + 1) * 8;
+    this.bitSetWidth = ((numFields / 64) + ((numFields % 64 == 0 ? 0 : 1))) * 8;
     this.baseObject = memory.getBaseObject();
     this.baseOffset = memory.getBaseOffset();
     this.numFields = numFields;
