@@ -197,14 +197,16 @@ public final class BytesToBytesMap {
             final MemoryLocation keyAddress = loc.getKeyAddress();
             final Object storedKeyBaseObject = keyAddress.getBaseObject();
             final long storedKeyBaseOffset = keyAddress.getBaseOffset();
-            for (int i = 0; i < keyRowLengthBytes; i += 8) {
-              final long expected =
-                PlatformDependent.UNSAFE.getLong(keyBaseObject, keyBaseOffset + i);
-              final long actual =
-                PlatformDependent.UNSAFE.getLong(storedKeyBaseObject, storedKeyBaseOffset + i);
-              if (actual != expected) break;
+            final boolean areEqual = ByteArrayMethods.wordAlignedArrayEquals(
+              keyBaseObject,
+              keyBaseOffset,
+              storedKeyBaseObject,
+              storedKeyBaseOffset,
+              keyRowLengthBytes
+            );
+            if (areEqual) {
+              return loc.with(pos, hashcode, true);
             }
-            return loc.with(pos, hashcode, true);
           }
         }
       }
