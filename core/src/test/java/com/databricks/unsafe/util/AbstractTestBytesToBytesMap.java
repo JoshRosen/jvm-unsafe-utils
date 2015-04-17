@@ -11,10 +11,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
 
-// A few general TODOs:
-  // We should re-use the same temporary storage / pointers / etc when copying the key data rather
-  // than performing allocations just so that we can do unsafe access to that data.
-
 public abstract class AbstractTestBytesToBytesMap {
 
   protected final Random rand = new Random(42);
@@ -41,6 +37,23 @@ public abstract class AbstractTestBytesToBytesMap {
     final byte[] bytes = new byte[lengthInBytes];
     rand.nextBytes(bytes);
     return bytes;
+  }
+
+  /**
+   * Fast equality checking for byte arrays, since these comparisons are a bottleneck
+   * in our stress tests.
+   */
+  protected boolean arrayEquals(
+      byte[] expected,
+      MemoryLocation actualAddr,
+      long actualLengthBytes) {
+    return (actualLengthBytes == expected.length) && ByteArrayMethods.wordAlignedArrayEquals(
+      expected,
+      BYTE_ARRAY_OFFSET,
+      actualAddr.getBaseObject(),
+      actualAddr.getBaseOffset(),
+      expected.length
+    );
   }
 
   @Test
@@ -135,8 +148,8 @@ public abstract class AbstractTestBytesToBytesMap {
         final byte[] value = entry.getValue();
         final BytesToBytesMap.Location loc = map.lookup(key, BYTE_ARRAY_OFFSET, key.length);
         Assert.assertTrue(loc.isDefined());
-        Assert.assertArrayEquals(key, getByteArray(loc.getKeyAddress(), key.length));
-        Assert.assertArrayEquals(value, getByteArray(loc.getValueAddress(), value.length));
+        Assert.assertTrue(arrayEquals(key, loc.getKeyAddress(), loc.getKeyLength()));
+        Assert.assertTrue(arrayEquals(value, loc.getValueAddress(), loc.getValueLength()));
       }
     } finally {
       map.free();
