@@ -149,26 +149,36 @@ public final class BytesToBytesMap {
   public long size() { return size; }
 
   /**
-   * Returns true if the key is defined in this map.
+   * Returns an iterator for iterating over the entries of this map.
+   *
+   * For efficiency, all calls to `next()` will return the same `Location` object.
+   *
+   * If any other lookups or operations are performed on this map while iterating over it, including
+   * `lookup()`, the behavior of the returned iterator is undefined.
    */
-//  public boolean containsKey(long key) {
-//    return lookup(key).isDefined();
-//  }
+  public Iterator<Location> iterator() {
+    return new Iterator<Location>() {
 
-  /**
-   * Updates the value the key maps to.
-   */
-//  public void put(long key, long value) {
-//    lookup(key).setValue(value);
-//  }
+      private long nextPos = bitset.nextSetBit(0);
 
-  /**
-   * Returns the value to which the specified key is mapped. In the case the key is not defined,
-   * this has undefined behavior.
-   */
-//  public long get(long key) {
-//    return lookup(key).getValue();
-//  }
+      @Override
+      public boolean hasNext() {
+        return nextPos != -1;
+      }
+
+      @Override
+      public Location next() {
+        final long pos = nextPos;
+        nextPos = bitset.nextSetBit(nextPos + 1);
+        return loc.with(pos, 0, true);
+      }
+
+      @Override
+      public void remove() {
+        throw new UnsupportedOperationException();
+      }
+    };
+  }
 
   /**
    * Looks up a key, and return a {@link Location} handle that can be used to test existence

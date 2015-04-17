@@ -7,9 +7,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import java.nio.ByteBuffer;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Random;
+import java.util.*;
 
 public abstract class AbstractTestBytesToBytesMap {
 
@@ -105,6 +103,45 @@ public abstract class AbstractTestBytesToBytesMap {
       } catch (IllegalStateException e) {
         // Expected exception; do nothing.
       }
+    } finally {
+      map.free();
+    }
+  }
+
+  @Test
+  public void iteratorTest() throws Exception {
+    final int size = 128;
+    BytesToBytesMap map = new BytesToBytesMap(allocator, size / 2);
+    try {
+      for (long i = 0; i < size; i++) {
+        final long[] value = new long[] { i };
+        final BytesToBytesMap.Location loc =
+          map.lookup(value, PlatformDependent.LONG_ARRAY_OFFSET, 8);
+        Assert.assertFalse(loc.isDefined());
+        loc.storeKeyAndValue(
+          value,
+          PlatformDependent.LONG_ARRAY_OFFSET,
+          8,
+          value,
+          PlatformDependent.LONG_ARRAY_OFFSET,
+          8
+        );
+      }
+      final java.util.BitSet valuesSeen = new java.util.BitSet(size);
+      final Iterator<BytesToBytesMap.Location> iter = map.iterator();
+      while (iter.hasNext()) {
+        final BytesToBytesMap.Location loc = iter.next();
+        Assert.assertTrue(loc.isDefined());
+        final MemoryLocation keyAddress = loc.getKeyAddress();
+        final MemoryLocation valueAddress = loc.getValueAddress();
+        final long key =  PlatformDependent.UNSAFE.getLong(
+          keyAddress.getBaseObject(), keyAddress.getBaseOffset());
+        final long value = PlatformDependent.UNSAFE.getLong(
+          valueAddress.getBaseObject(), valueAddress.getBaseOffset());
+        Assert.assertEquals(key, value);
+        valuesSeen.set((int) value);
+      }
+      Assert.assertEquals(size, valuesSeen.cardinality());
     } finally {
       map.free();
     }
